@@ -1,0 +1,167 @@
+name: NAPI Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-package:
+    name: Build and Package (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build tools and cargo-xwin
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lld
+          pip install cargo-xwin
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Install Rust targets
+        run: npm run native:targets:add
+
+      - name: Cache cargo-xwin SDK/tool cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.xwin-cache
+          key: xwin-${{ runner.os }}-${{ hashFiles('native/Cargo.lock', 'native/Cargo.toml') }}
+          restore-keys: |
+            xwin-${{ runner.os }}-
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native
+          cache-targets: true
+          cache-all-crates: true
+
+      - name: Compile all native binaries
+        run: npm run native:build:cross
+        env:
+          XWIN_CACHE_DIR: ${{ github.workspace }}/.xwin-cache
+
+      - name: Build JS/TS assets
+        run: npm run build
+
+      - name: Prepare npm platform packages
+        run: npm run native:prepublish
+
+      - name: Upload built packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-packages
+          path: |
+            dist
+            prebuilds
+            npm
+          if-no-files-found: error
+
+  test-matrix:
+    name: Test (${{ matrix.os }} / ${{ matrix.arch }})
+    needs: build-and-package
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: x64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - os: windows
+            arch: x64
+            runner: windows-latest
+          - os: windows
+            arch: arm64
+            runner: windows-11-arm
+          - os: macos
+            arch: x64
+            runner: macos-15-intel
+          - os: macos
+            arch: arm64
+            runner: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-packages
+          path: .
+
+      - name: Run tests
+        run: npm run test
+
+  publish:
+    name: Publish to npm and GitHub
+    needs: [test-matrix]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-packages
+          path: .
+
+      - name: Publish platform packages to npm
+        run: |
+          for pkg in npm/*; do
+            if [ -d "$pkg" ]; then
+              echo "Publishing $pkg"
+              npm publish "$pkg" --access public --provenance
+            fi
+          done
+
+      - name: Publish main package to npm
+        run: |
+          npm publish --access public --provenance
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

@@ -1,0 +1,101 @@
+{
+  "name": "@mineygg/zlibsync-rs",
+  "version": "0.0.1",
+  "description": "Synchronous zlib inflate — Rust/NAPI-RS",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "author": "mineygg",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mineygg/zlibsync-rs.git",
+    "directory": "."
+  },
+  "homepage": "https://github.com/mineygg/zlibsync-rs#readme",
+  "bugs": {
+    "url": "https://github.com/mineygg/zlibsync-rs/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "prebuilds",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format . --write",
+    "check": "biome check . --write --unsafe",
+    "checkall": "npm run typecheck && npm run check",
+    "test": "vitest run",
+    "native:build": "napi build --manifest-path ./native/Cargo.toml --platform --release -o ./prebuilds",
+    "native:build:debug": "napi build --manifest-path ./native/Cargo.toml --platform -o ./prebuilds",
+    "native:targets:add": "rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf x86_64-apple-darwin aarch64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc",
+    "native:build:win": "napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-pc-windows-msvc -o ./prebuilds",
+    "native:build:win:arm64": "napi build --manifest-path ./native/Cargo.toml --platform --release --target aarch64-pc-windows-msvc --cross-compile -o ./prebuilds",
+    "native:build:unix": "napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-unknown-linux-gnu --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target aarch64-unknown-linux-gnu --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-unknown-linux-musl --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target aarch64-unknown-linux-musl --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target armv7-unknown-linux-gnueabihf --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target armv7-unknown-linux-musleabihf --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-apple-darwin --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --release --target aarch64-apple-darwin --cross-compile -o ./prebuilds",
+    "native:build:cross": "node ./scripts/build-native.js",
+    "native:build:all": "npm run native:targets:add && npm run native:build:win && (npm run native:build:unix || echo Skipping unix cross targets)",
+    "native:artifacts": "napi artifacts",
+    "native:prepublish": "napi pre-publish -t npm",
+    "native:clippy": "cargo clippy --manifest-path ./native/Cargo.toml --all-targets -- -D warnings",
+    "native:fmt": "cargo fmt --manifest-path ./native/Cargo.toml --all",
+    "prepublishOnly": "npm run build && node ./scripts/prepublish-validate.mjs"
+  },
+  "napi": {
+    "binaryName": "zlibsync_rs",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
+      "armv7-unknown-linux-gnueabihf",
+      "armv7-unknown-linux-musleabihf"
+    ]
+  },
+  "keywords": [
+    "zlib",
+    "inflate",
+    "deflate",
+    "zlib-sync",
+    "napi",
+    "rust",
+    "native",
+    "websocket",
+    "ws"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.4.16",
+    "@napi-rs/cli": "^3.7.0",
+    "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.7"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

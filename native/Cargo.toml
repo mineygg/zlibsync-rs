@@ -1,0 +1,25 @@
+[package]
+name = "zlibsync-rs-native"
+version = "0.1.0"
+edition = "2021"
+authors = ["mineygg"]
+license = "MIT"
+description = "Synchronous zlib inflate — Rust/NAPI-RS native addon"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi4", "compat-mode"] }
+napi-derive = "2"
+flate2 = { version = "1", features = ["zlib-ng"], default-features = false }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+strip = true
+panic = "abort"

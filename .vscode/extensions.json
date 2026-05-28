@@ -1,0 +1,7 @@
+﻿{
+  "recommendations": [
+    "biomejs.biome",
+    "llvm-vs-code-extensions.vscode-clangd",
+    "rust-lang.rust-analyzer"
+  ]
+}
