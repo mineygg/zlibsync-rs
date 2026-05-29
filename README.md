@@ -28,7 +28,6 @@ Prebuilt binaries are provided for the following platforms. No native compilatio
 | Platform | Architecture | ABI     |
 |----------|-------------|---------|
 | Windows  | x64         | MSVC    |
-| Windows  | arm64       | MSVC    |
 | Linux    | x64         | glibc   |
 | Linux    | x64         | musl    |
 | Linux    | arm64       | glibc   |

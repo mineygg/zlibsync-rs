@@ -35,7 +35,6 @@ import { arch, platform } from "node:process";
  */
 type SupportedPlatform =
   | "win32-x64-msvc"
-  | "win32-arm64-msvc"
   | "linux-x64-gnu"
   | "linux-arm64-gnu"
   | "linux-x64-musl"
@@ -64,7 +63,6 @@ function getPlatformTriple(): SupportedPlatform {
 
   if (p === "win32") {
     if (a === "x64") return "win32-x64-msvc";
-    if (a === "arm64") return "win32-arm64-msvc";
   }
 
   if (p === "darwin") {

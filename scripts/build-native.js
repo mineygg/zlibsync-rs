@@ -28,7 +28,6 @@ const targets = [
   { triple: "x86_64-apple-darwin", cross: true },
   { triple: "aarch64-apple-darwin", cross: true },
   { triple: "x86_64-pc-windows-msvc", cross: false, forceXwin: true },
-  { triple: "aarch64-pc-windows-msvc", cross: false, forceXwin: true },
 ];
 
 console.log(`Starting cross-compilation pipeline for all ${targets.length} platforms...\n`);

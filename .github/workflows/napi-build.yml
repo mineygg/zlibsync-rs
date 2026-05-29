@@ -104,9 +104,6 @@ jobs:
           - os: windows
             arch: x64
             runner: windows-latest
-          - os: windows
-            arch: arm64
-            runner: windows-11-arm
           - os: macos
             arch: x64
             runner: macos-15-intel
