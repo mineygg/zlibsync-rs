@@ -61,9 +61,13 @@ for (const target of targets) {
     env.CARGO = "cargo-xwin";
   }
 
-  // Fix for zlib-ng cross-compiling on aarch64-pc-windows-msvc using clang-cl
+  // zlib-ng uses arm_acle.h for __crc32b intrinsics, but clang-cl targeting
+  // aarch64-pc-windows-msvc uses MSVC-style headers (intrin.h) from the xwin
+  // sysroot which do not expose those symbols. The cmake crate reads
+  // CMAKE_<target>  (underscored) as extra cmake args, so we pass
+  // -DWITH_ARMV8=OFF to skip the broken ARM CRC hardware path entirely.
   if (target.triple === "aarch64-pc-windows-msvc") {
-    env.CFLAGS = (env.CFLAGS || "") + " -march=armv8-a+crc";
+    env.CMAKE_aarch64_pc_windows_msvc = "-DWITH_ARMV8=OFF -DWITH_NEON=OFF";
   }
 
   if (!env.XWIN_CACHE_DIR) {
