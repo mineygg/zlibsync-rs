@@ -12,7 +12,16 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "2", default-features = false, features = ["napi4", "compat-mode"] }
 napi-derive = "2"
+
+# aarch64-pc-windows-msvc: clang-cl cross-compiles via cargo-xwin but the
+# xwin sysroot does not expose ARM CRC intrinsics (__crc32b etc.) through
+# arm_acle.h, so zlib-ng CMake fails to compile crc32_armv8.c. Use the
+# pure-Rust miniz_oxide backend for that target; it needs no cmake at all.
+[target.'cfg(not(all(target_os = "windows", target_arch = "aarch64")))'.dependencies]
 flate2 = { version = "1", features = ["zlib-ng"], default-features = false }
+
+[target.'cfg(all(target_os = "windows", target_arch = "aarch64"))'.dependencies]
+flate2 = { version = "1", default-features = false }
 
 [build-dependencies]
 napi-build = "2"
