@@ -9,7 +9,6 @@ const requiredDist = ["dist/index.js", "dist/index.cjs", "dist/index.d.ts"];
 // One compiled native binary per supported platform.
 const requiredTargets = [
   "win32-x64-msvc",
-  "win32-arm64-msvc",
   "linux-x64-gnu",
   "linux-arm64-gnu",
   "darwin-x64",

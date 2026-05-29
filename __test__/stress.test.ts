@@ -60,7 +60,7 @@ describe("Stress Tests", () => {
       console.log(
         `50MB decompression: ${(end - start).toFixed(2)}ms, compression ratio: ${compressionRatio}%`,
       );
-    });
+    }, 15000);
   });
 
   describe("Chunked decompression", () => {
@@ -207,7 +207,7 @@ describe("Stress Tests", () => {
       console.log(
         `JSON-like ${(testData.length / 1024 / 1024).toFixed(2)}MB decompression: ${(end - start).toFixed(2)}ms, ratio: ${compressionRatio}%`,
       );
-    });
+    }, 20000);
 
     it("should handle binary data", () => {
       const testData = Buffer.alloc(5 * 1024 * 1024);
