@@ -28,11 +28,21 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-llvm-${{ runner.os }}
+
       - name: Install build tools and cargo-xwin
         run: |
           sudo apt-get update
-          sudo apt-get install -y lld
+          sudo apt-get install -y --download-only lld llvm
+          sudo apt-get install -y lld llvm
           pip install cargo-xwin
+          echo '#!/bin/bash' | sudo tee /usr/local/bin/xcrun > /dev/null
+          echo 'echo "/"' | sudo tee -a /usr/local/bin/xcrun > /dev/null
+          sudo chmod +x /usr/local/bin/xcrun
 
       - name: Install Node dependencies
         run: npm install
