@@ -6,7 +6,7 @@
 
 ## Features
 
-- **Native performance** — core decompression implemented in Rust via [`flate2`](https://crates.io/crates/flate2) and exposed through [napi-rs](https://napi.rs/).
+- **Native performance** — core decompression implemented in Rust via [`flate2`](https://crates.io/crates/flate2) (using the high-performance `zlib-ng` backend) and exposed through [napi-rs](https://napi.rs/).
 - **Prebuilt binaries** — no build toolchain required at install time for supported platforms.
 - **Full zlib constant surface** — all standard flush modes, return codes, compression levels, strategies, and data types are re-exported.
 - **TypeScript-first** — ships with complete `.d.ts` declarations.
