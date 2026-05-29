@@ -61,6 +61,11 @@ for (const target of targets) {
     env.CARGO = "cargo-xwin";
   }
 
+  // Fix for zlib-ng cross-compiling on aarch64-pc-windows-msvc using clang-cl
+  if (target.triple === "aarch64-pc-windows-msvc") {
+    env.CFLAGS = (env.CFLAGS || "") + " -march=armv8-a+crc";
+  }
+
   if (!env.XWIN_CACHE_DIR) {
     env.XWIN_CACHE_DIR =
       process.platform === "win32" ? "D:/rust/.xwin-cache" : resolve(rootDir, ".xwin-cache");
