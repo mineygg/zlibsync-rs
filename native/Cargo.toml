@@ -1,6 +1,6 @@
 [package]
 name = "zlibsync-rs-native"
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["mineygg"]
 license = "MIT"
@@ -12,7 +12,18 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "2", default-features = false, features = ["napi4", "compat-mode"] }
 napi-derive = "2"
+
+# --- Target-Specific Dependencies ---
+
+# 1. Windows ARM64 -> Compiles smoothly with pure Rust zlib-rs
+[target.'cfg(all(target_os = "windows", target_arch = "aarch64"))'.dependencies]
 flate2 = { version = "1", features = ["zlib-rs"], default-features = false }
+
+# 2. All other platforms -> Keeps using the high-performance zlib-ng backend
+[target.'cfg(not(all(target_os = "windows", target_arch = "aarch64")))'.dependencies]
+flate2 = { version = "1", features = ["zlib-ng"], default-features = false }
+
+# ------------------------------------
 
 [build-dependencies]
 napi-build = "2"

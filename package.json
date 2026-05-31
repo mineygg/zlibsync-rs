@@ -1,6 +1,6 @@
 {
   "name": "@mineygg/zlibsync-rs",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Synchronous zlib inflate — Rust/NAPI-RS",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -49,8 +49,9 @@
     "test": "vitest run",
     "native:build": "napi build --manifest-path ./native/Cargo.toml --platform --release -o ./prebuilds",
     "native:build:debug": "napi build --manifest-path ./native/Cargo.toml --platform -o ./prebuilds",
-    "native:targets:add": "rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc",
+    "native:targets:add": "rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc aarch64-pc-windows-msvc",
     "native:build:win": "napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-pc-windows-msvc -o ./prebuilds",
+"native:build:win-arm": "napi build --manifest-path ./native/Cargo.toml --platform --release --target aarch64-pc-windows-msvc -o ./prebuilds",
     "native:build:unix": "napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-unknown-linux-gnu --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target aarch64-unknown-linux-gnu --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-unknown-linux-musl --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target aarch64-unknown-linux-musl --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target armv7-unknown-linux-gnueabihf --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target armv7-unknown-linux-musleabihf --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --platform --release --target x86_64-apple-darwin --cross-compile -o ./prebuilds && napi build --manifest-path ./native/Cargo.toml --release --target aarch64-apple-darwin --cross-compile -o ./prebuilds",
     "native:build:cross": "node ./scripts/build-native.js",
     "native:build:all": "npm run native:targets:add && npm run native:build:win && (npm run native:build:unix || echo Skipping unix cross targets)",
@@ -58,7 +59,6 @@
     "native:prepublish": "napi pre-publish -t npm",
     "native:clippy": "cargo clippy --manifest-path ./native/Cargo.toml --all-targets -- -D warnings",
     "native:fmt": "cargo fmt --manifest-path ./native/Cargo.toml --all",
-    "native:check": "node ./scripts/check-binaries.js",
     "prepublishOnly": "npm run build && node ./scripts/prepublish-validate.mjs"
   },
   "napi": {

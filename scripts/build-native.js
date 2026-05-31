@@ -28,6 +28,8 @@ const targets = [
   { triple: "x86_64-apple-darwin", cross: true },
   { triple: "aarch64-apple-darwin", cross: true },
   { triple: "x86_64-pc-windows-msvc", cross: false, forceXwin: true },
+  // Added Windows ARM64 target here
+  { triple: "aarch64-pc-windows-msvc", cross: false, forceXwin: true }, 
 ];
 
 console.log(`Starting cross-compilation pipeline for all ${targets.length} platforms...\n`);
@@ -38,7 +40,6 @@ for (const target of targets) {
   console.log("==================================================\n");
 
   // Build the napi CLI argument list.
-  // Layout: npx [@napi-rs/cli] napi build [-x] --manifest-path ... --release --platform -o ./prebuilds --target <triple>
   const args = [
     "napi",
     "build",
@@ -55,9 +56,6 @@ for (const target of targets) {
   if (target.cross) args.splice(2, 0, "-x");
 
   const env = { ...process.env };
-
-  // Optimize C dependencies (such as zlib-ng compiled via CMake) for size
-  env.CFLAGS = [env.CFLAGS || "", "-Os"].join(" ").trim();
 
   if (target.forceXwin) {
     env.CARGO = "cargo-xwin";
