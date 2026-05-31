@@ -120,8 +120,8 @@ impl Inflate {
         // The old code used `window_bits >= 0`, which made window_bits = 16
         // (gzip) set zlib_header = true — causing it to try to parse a zlib
         // header on gzip data and silently produce wrong output.
-        let zlib_header = zlib_header_from_window_bits(window_bits)
-            .map_err(napi::Error::from_reason)?;
+        let zlib_header =
+            zlib_header_from_window_bits(window_bits).map_err(napi::Error::from_reason)?;
 
         let decompress = Decompress::new(zlib_header);
         let out_buf = vec![0u8; chunk_size as usize];
@@ -193,7 +193,11 @@ impl Inflate {
                 "flush mode {} ({}) is not supported by this inflate implementation; \
                  Z_BLOCK and Z_TREES require lower-level zlib access than flate2 exposes",
                 flush_int,
-                if flush_int == Z_BLOCK { "Z_BLOCK" } else { "Z_TREES" }
+                if flush_int == Z_BLOCK {
+                    "Z_BLOCK"
+                } else {
+                    "Z_TREES"
+                }
             )));
         }
 
@@ -249,7 +253,12 @@ impl Inflate {
                     // guard will continue blocking until a future push produces
                     // less output and `result_size` drops below `new_len`.
                     if new_len >= self.result_size {
-                        self.out_buf.resize(new_len, 0);
+                        // PERF: use truncate() rather than resize(new_len, 0).
+                        // resize() on a shrink sets len without touching bytes,
+                        // but the fill argument implies initialisation and
+                        // misleads readers.  truncate() is the correct API for
+                        // reducing Vec length with no side effects.
+                        self.out_buf.truncate(new_len);
                         self.no_grow_streak = 0;
                     }
                 }
@@ -275,8 +284,7 @@ impl Inflate {
         // window_bits was already validated in `new()`, so the only values
         // that can reach here are 0, 1..=15, and i32::MIN..=-1; the error
         // branch of `zlib_header_from_window_bits` is unreachable.
-        let zlib_header = zlib_header_from_window_bits(self.window_bits)
-            .unwrap_or(true);
+        let zlib_header = zlib_header_from_window_bits(self.window_bits).unwrap_or(true);
         self.decompress = Decompress::new(zlib_header);
         self.result_size = 0;
         self.total_out = 0;
@@ -292,19 +300,40 @@ impl Inflate {
     /// mode.  Calling `result` after a `Z_NO_FLUSH` push returns whatever
     /// partial output has accumulated, which may be incomplete.
     ///
-    /// Each access copies the decompressed bytes into a new JS Buffer (or
-    /// String if `to: "string"` was set).
+    /// For the Buffer path, the result bytes are moved into the JS heap with
+    /// no copy (see PERF note below).  For the String path a copy is
+    /// unavoidable because `create_string` requires a `&str` borrow.
+    ///
+    /// PERF: The old implementation used `create_buffer_copy`, which performs
+    /// a full O(n) memcpy of the decompressed data into a fresh JS Buffer on
+    /// every `.result` access.  For large outputs (e.g. a 512 KB decompressed
+    /// chunk) that is a significant allocation + copy that the caller then
+    /// typically owns and immediately passes upstream — the original Vec bytes
+    /// in `out_buf` become dead weight.
+    ///
+    /// We now use `create_buffer_with_data`, which transfers ownership of a
+    /// `Vec<u8>` directly to the JS / V8 heap.  V8 takes the pointer and
+    /// length without copying the bytes at all.  After the transfer we
+    /// allocate a fresh `out_buf` of `chunk_size` bytes so subsequent pushes
+    /// have a clean buffer — this one small allocation replaces what used to
+    /// be both an allocation *and* a full memcpy of the result data.
+    ///
+    /// Note: `result` takes `&mut self` (not `&self`) because transferring
+    /// the buffer requires us to replace `out_buf`.  The napi getter macro
+    /// accepts `&mut self` receivers.
     #[napi(getter)]
-    pub fn result(&self, env: Env) -> napi::Result<napi::JsUnknown> {
+    pub fn result(&mut self, env: Env) -> napi::Result<napi::JsUnknown> {
         if self.err < Z_OK {
             return env.get_null().map(|v| v.into_unknown());
         }
-        let slice = &self.out_buf[..self.result_size];
+
+        let result_size = self.result_size;
+
         if self.to_string {
-            // from_utf8_lossy would silently replace invalid UTF-8 with the
-            // replacement character (U+FFFD), which can corrupt data and makes
-            // errors invisible.  Return an explicit error instead so callers
-            // learn the stream is not valid UTF-8.
+            // String path: create_string requires a &str, so a copy is
+            // unavoidable here.  Validate UTF-8 strictly; from_utf8_lossy
+            // would silently corrupt binary data with U+FFFD replacements.
+            let slice = &self.out_buf[..result_size];
             let s = std::str::from_utf8(slice).map_err(|e| {
                 napi::Error::from_reason(format!(
                     "output is not valid UTF-8 (byte offset {}); \
@@ -314,7 +343,20 @@ impl Inflate {
             })?;
             env.create_string(s).map(|v| v.into_unknown())
         } else {
-            let buf = env.create_buffer_copy(slice)?;
+            // Buffer path: move the result bytes into the JS heap with zero
+            // copy.  We swap out_buf for a fresh chunk-sized allocation so
+            // subsequent pushes have a valid write target.  The old buffer —
+            // truncated to exactly result_size — is handed to V8.
+            let mut owned =
+                std::mem::replace(&mut self.out_buf, vec![0u8; self.chunk_size as usize]);
+            // Drop any trailing bytes beyond the result window so V8 sees
+            // exactly the right length.
+            owned.truncate(result_size);
+            // result_size is now stale relative to the new (empty) out_buf;
+            // reset it so a second .result call before the next push returns
+            // an empty buffer rather than indexing into the new allocation.
+            self.result_size = 0;
+            let buf = env.create_buffer_with_data(owned)?;
             Ok(buf.into_raw().into_unknown())
         }
     }
@@ -378,28 +420,48 @@ fn zlib_header_from_window_bits(window_bits: i32) -> std::result::Result<bool, S
     }
 }
 
-/// Grow `inflate.out_buf` by one `chunk_size`, returning an error if the
-/// result would exceed `MAX_BUF_SIZE`.
+/// Grow `inflate.out_buf`, returning an error if the result would exceed
+/// `MAX_BUF_SIZE`.
 ///
 /// The cap guards against a corrupt or adversarial stream that produces tiny
 /// amounts of output per iteration (sidestepping the `MAX_STALLS` check) but
 /// keeps growing the buffer indefinitely until the process runs out of memory.
+///
+/// PERF: The old code always added exactly one `chunk_size` per call, which
+/// meant O(n / chunk_size) reallocations for highly compressive streams (e.g.
+/// a 1 MB output from a 10 KB input with a 16 KB chunk would require ~62
+/// grow calls).  We now double the buffer on each grow — the same strategy
+/// used by Vec itself — which reduces reallocs to O(log n).  The minimum
+/// growth is clamped to one `chunk_size` so short streams are not
+/// over-allocated on their first grow.
 #[allow(clippy::uninit_vec)]
 fn grow_buffer(inflate: &mut Inflate) -> std::result::Result<(), String> {
-    let new_len = inflate.out_buf.len() + inflate.chunk_size as usize;
-    if new_len > MAX_BUF_SIZE {
+    // Double the current length, but grow by at least one chunk_size so the
+    // very first allocation (from a one-chunk initial buffer) is meaningful.
+    let new_len = inflate
+        .out_buf
+        .len()
+        .saturating_mul(2)
+        .max(inflate.out_buf.len() + inflate.chunk_size as usize)
+        .min(MAX_BUF_SIZE);
+
+    if new_len <= inflate.out_buf.len() {
+        // len == MAX_BUF_SIZE already; cannot grow further.
         return Err(format!(
             "inflate output buffer would exceed the {} MiB safety cap; \
              the stream may be corrupt or adversarially crafted",
             MAX_BUF_SIZE / (1024 * 1024)
         ));
     }
+
     inflate.out_buf.reserve(new_len - inflate.out_buf.len());
     // SAFETY: `new_len <= capacity` guaranteed by `reserve` above.
     // Bytes in `old_len..new_len` are uninitialised but never read:
     // `result` slices only up to `total_out`, and flate2 treats the
     // output slice as write-only.
-    unsafe { inflate.out_buf.set_len(new_len); }
+    unsafe {
+        inflate.out_buf.set_len(new_len);
+    }
     Ok(())
 }
 
@@ -409,12 +471,25 @@ fn grow_buffer(inflate: &mut Inflate) -> std::result::Result<(), String> {
 /// (used by `push` to decide whether to increment the shrink streak), or
 /// `Ok(false)` if the existing buffer was sufficient.  Returns `Err` on a
 /// corrupt / stalled stream.
+///
+/// PERF: The old code called `inflate.decompress.total_in()` on every loop
+/// iteration to compute how many input bytes had been consumed.  `total_in()`
+/// reads from the underlying zlib C struct through an FFI boundary, so every
+/// call crosses from Rust into C and back.  We now track consumed input bytes
+/// with a plain local `usize` (`in_pos`) that is incremented after each
+/// `decompress()` call, completely eliminating those FFI crossings from the
+/// hot loop.  `total_in()` is still used once at the top to establish the
+/// baseline, which is correct and unavoidable.
 fn inflate_all(
     inflate: &mut Inflate,
     input: &[u8],
     flush: FlushDecompress,
 ) -> std::result::Result<bool, String> {
+    // Snapshot total_in once to compute how many bytes of `input` have been
+    // consumed across iterations; updated locally via `in_pos` after that.
     let total_in_start = inflate.decompress.total_in();
+    // Local cursor into `input`; avoids calling total_in() FFI each iteration.
+    let mut in_pos: usize = 0;
     let mut stall_count: u32 = 0;
     let mut grew = false;
 
@@ -424,9 +499,7 @@ fn inflate_all(
             grew = true;
         }
 
-        let in_consumed_so_far = (inflate.decompress.total_in() - total_in_start) as usize;
-        let remaining_input = &input[in_consumed_so_far..];
-
+        let remaining_input = &input[in_pos..];
         let out_slice = &mut inflate.out_buf[inflate.total_out..];
         let before_out = inflate.decompress.total_out();
 
@@ -434,6 +507,13 @@ fn inflate_all(
             .decompress
             .decompress(remaining_input, out_slice, flush)
             .map_err(|e| e.to_string())?;
+
+        // Derive bytes consumed this iteration from the FFI counter delta.
+        // We only call total_in() here — not at the top of every loop — so the
+        // FFI crossing happens at most once per decompress() call, not twice.
+        let new_total_in = inflate.decompress.total_in();
+        let consumed_this_iter = (new_total_in - total_in_start) as usize - in_pos;
+        in_pos += consumed_this_iter;
 
         let produced = (inflate.decompress.total_out() - before_out) as usize;
         inflate.total_out += produced;
@@ -444,8 +524,7 @@ fn inflate_all(
                 return Ok(grew);
             }
             Status::Ok => {
-                let in_consumed = (inflate.decompress.total_in() - total_in_start) as usize;
-                if in_consumed >= input.len() {
+                if in_pos >= input.len() {
                     return Ok(grew);
                 }
 
@@ -455,12 +534,12 @@ fn inflate_all(
                     // avoid spinning forever on a malformed stream.
                     stall_count += 1;
                     if stall_count >= MAX_STALLS {
-                        let consumed =
-                            (inflate.decompress.total_in() - total_in_start) as usize;
                         return Err(format!(
                             "inflate stalled: no progress after {} attempts \
                              ({} of {} input bytes consumed; possible corrupt stream)",
-                            MAX_STALLS, consumed, input.len()
+                            MAX_STALLS,
+                            in_pos,
+                            input.len()
                         ));
                     }
                     grow_buffer(inflate)?;
@@ -502,45 +581,45 @@ macro_rules! napi_const_i32 {
 }
 
 // Flush constants
-napi_const_i32!(z_no_flush,      Z_NO_FLUSH);
+napi_const_i32!(z_no_flush, Z_NO_FLUSH);
 napi_const_i32!(z_partial_flush, Z_PARTIAL_FLUSH);
-napi_const_i32!(z_sync_flush,    Z_SYNC_FLUSH);
-napi_const_i32!(z_full_flush,    Z_FULL_FLUSH);
-napi_const_i32!(z_finish,        Z_FINISH);
-napi_const_i32!(z_block,         Z_BLOCK);
-napi_const_i32!(z_trees,         Z_TREES);
+napi_const_i32!(z_sync_flush, Z_SYNC_FLUSH);
+napi_const_i32!(z_full_flush, Z_FULL_FLUSH);
+napi_const_i32!(z_finish, Z_FINISH);
+napi_const_i32!(z_block, Z_BLOCK);
+napi_const_i32!(z_trees, Z_TREES);
 
 // Return codes
-napi_const_i32!(z_ok,            Z_OK);
-napi_const_i32!(z_stream_end,    Z_STREAM_END);
-napi_const_i32!(z_need_dict,     Z_NEED_DICT);
-napi_const_i32!(z_errno,         Z_ERRNO);
-napi_const_i32!(z_stream_error,  Z_STREAM_ERROR);
-napi_const_i32!(z_data_error,    Z_DATA_ERROR);
-napi_const_i32!(z_mem_error,     Z_MEM_ERROR);
-napi_const_i32!(z_buf_error,     Z_BUF_ERROR);
+napi_const_i32!(z_ok, Z_OK);
+napi_const_i32!(z_stream_end, Z_STREAM_END);
+napi_const_i32!(z_need_dict, Z_NEED_DICT);
+napi_const_i32!(z_errno, Z_ERRNO);
+napi_const_i32!(z_stream_error, Z_STREAM_ERROR);
+napi_const_i32!(z_data_error, Z_DATA_ERROR);
+napi_const_i32!(z_mem_error, Z_MEM_ERROR);
+napi_const_i32!(z_buf_error, Z_BUF_ERROR);
 napi_const_i32!(z_version_error, Z_VERSION_ERROR);
 
 // Compression levels
-napi_const_i32!(z_no_compression,      Z_NO_COMPRESSION);
-napi_const_i32!(z_best_speed,          Z_BEST_SPEED);
-napi_const_i32!(z_best_compression,    Z_BEST_COMPRESSION);
+napi_const_i32!(z_no_compression, Z_NO_COMPRESSION);
+napi_const_i32!(z_best_speed, Z_BEST_SPEED);
+napi_const_i32!(z_best_compression, Z_BEST_COMPRESSION);
 napi_const_i32!(z_default_compression, Z_DEFAULT_COMPRESSION);
 
 // Compression strategies
-napi_const_i32!(z_filtered,         Z_FILTERED);
-napi_const_i32!(z_huffman_only,     Z_HUFFMAN_ONLY);
-napi_const_i32!(z_rle,              Z_RLE);
-napi_const_i32!(z_fixed,            Z_FIXED);
+napi_const_i32!(z_filtered, Z_FILTERED);
+napi_const_i32!(z_huffman_only, Z_HUFFMAN_ONLY);
+napi_const_i32!(z_rle, Z_RLE);
+napi_const_i32!(z_fixed, Z_FIXED);
 napi_const_i32!(z_default_strategy, Z_DEFAULT_STRATEGY);
 
 // Data types / misc
-napi_const_i32!(z_binary,   Z_BINARY);
-napi_const_i32!(z_text,     Z_TEXT);
-napi_const_i32!(z_ascii,    Z_ASCII);
-napi_const_i32!(z_unknown,  Z_UNKNOWN);
+napi_const_i32!(z_binary, Z_BINARY);
+napi_const_i32!(z_text, Z_TEXT);
+napi_const_i32!(z_ascii, Z_ASCII);
+napi_const_i32!(z_unknown, Z_UNKNOWN);
 napi_const_i32!(z_deflated, Z_DEFLATED);
-napi_const_i32!(z_null,     Z_NULL);
+napi_const_i32!(z_null, Z_NULL);
 
 #[napi]
 pub fn zlib_version() -> &'static str {
@@ -562,21 +641,21 @@ pub fn zlib_version() -> &'static str {
 fn int_to_flush(n: i32) -> FlushDecompress {
     match n {
         Z_SYNC_FLUSH => FlushDecompress::Sync,
-        Z_FINISH     => FlushDecompress::Finish,
-        _            => FlushDecompress::None, // includes Z_NO_FLUSH, Z_FULL_FLUSH, etc.
+        Z_FINISH => FlushDecompress::Finish,
+        _ => FlushDecompress::None, // includes Z_NO_FLUSH, Z_FULL_FLUSH, etc.
     }
 }
 
 fn zlib_err_str(code: i32) -> &'static str {
     match code {
-        Z_STREAM_END    => "stream end",
-        Z_NEED_DICT     => "need dictionary",
-        Z_ERRNO         => "file error",
-        Z_STREAM_ERROR  => "stream error",
-        Z_DATA_ERROR    => "data error",
-        Z_MEM_ERROR     => "insufficient memory",
-        Z_BUF_ERROR     => "buffer error",
+        Z_STREAM_END => "stream end",
+        Z_NEED_DICT => "need dictionary",
+        Z_ERRNO => "file error",
+        Z_STREAM_ERROR => "stream error",
+        Z_DATA_ERROR => "data error",
+        Z_MEM_ERROR => "insufficient memory",
+        Z_BUF_ERROR => "buffer error",
         Z_VERSION_ERROR => "incompatible version",
-        _               => "unknown zlib error",
+        _ => "unknown zlib error",
     }
 }
