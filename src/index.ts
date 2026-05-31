@@ -11,7 +11,7 @@
  * inflate.push(compressedBuffer, Z_SYNC_FLUSH);
  *
  * if (inflate.err < 0) {
- *   throw new Error(`zlib error ${inflate.err}: ${inflate.msg}`);
+ * throw new Error(`zlib error ${inflate.err}: ${inflate.msg}`);
  * }
  * const output = inflate.result; // Buffer | string | null
  * ```
@@ -35,6 +35,7 @@ import { arch, platform } from "node:process";
  */
 type SupportedPlatform =
   | "win32-x64-msvc"
+  | "win32-arm64-msvc" // Added Windows ARM64 target type here
   | "linux-x64-gnu"
   | "linux-arm64-gnu"
   | "linux-x64-musl"
@@ -53,7 +54,7 @@ type SupportedPlatform =
  * generated loaders.
  *
  * @throws {Error} When the current platform/architecture combination does not
- *   have a prebuilt binary (e.g. FreeBSD, RISC-V).
+ * have a prebuilt binary (e.g. FreeBSD, RISC-V).
  *
  * @internal
  */
@@ -63,6 +64,7 @@ function getPlatformTriple(): SupportedPlatform {
 
   if (p === "win32") {
     if (a === "x64") return "win32-x64-msvc";
+    if (a === "arm64") return "win32-arm64-msvc"; // Resolved Windows ARM64 architecture here
   }
 
   if (p === "darwin") {
