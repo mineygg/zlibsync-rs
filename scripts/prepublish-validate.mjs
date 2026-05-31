@@ -31,8 +31,7 @@ const requiredTargets = [
 ];
 
 const SIGNATURES = [
-  Buffer.from("zlib-ng", "utf8"),
-  Buffer.from("zng_inflate", "utf8"),
+  Buffer.from("zlib-rs", "utf8"),
 ];
 
 const errors = [];
@@ -57,11 +56,11 @@ for (const triple of requiredTargets) {
     continue;
   }
 
-  // Verify the binary compiles with zlib-ng backend
+  // Verify the binary is compiled with the zlib-rs backend
   const buffer = readFileSync(full);
-  const hasZlibNg = SIGNATURES.some(sig => buffer.indexOf(sig) !== -1);
-  if (!hasZlibNg) {
-    errors.push(`Binary ${rel} does not contain zlib-ng signatures (using miniz_oxide fallback). Run a clean cross-compilation build.`);
+  const hasZlibRs = SIGNATURES.some(sig => buffer.indexOf(sig) !== -1);
+  if (!hasZlibRs) {
+    errors.push(`Binary ${rel} does not contain zlib-rs signatures (using miniz_oxide fallback). Run a clean cross-compilation build.`);
   }
 }
 
