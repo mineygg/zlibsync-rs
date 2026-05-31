@@ -56,6 +56,9 @@ for (const target of targets) {
 
   const env = { ...process.env };
 
+  // Optimize C dependencies (such as zlib-ng compiled via CMake) for size
+  env.CFLAGS = [env.CFLAGS || "", "-Os"].join(" ").trim();
+
   if (target.forceXwin) {
     env.CARGO = "cargo-xwin";
   }

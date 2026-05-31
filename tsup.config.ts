@@ -7,7 +7,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   splitting: false,
-  minify: true,
+  minify: false,
   shims: true,
   treeshake: true,
   skipNodeModulesBundle: true,

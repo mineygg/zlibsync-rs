@@ -1,6 +1,6 @@
 {
   "name": "@mineygg/zlibsync-rs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Synchronous zlib inflate — Rust/NAPI-RS",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -58,6 +58,7 @@
     "native:prepublish": "napi pre-publish -t npm",
     "native:clippy": "cargo clippy --manifest-path ./native/Cargo.toml --all-targets -- -D warnings",
     "native:fmt": "cargo fmt --manifest-path ./native/Cargo.toml --all",
+    "native:check": "node ./scripts/check-binaries.js",
     "prepublishOnly": "npm run build && node ./scripts/prepublish-validate.mjs"
   },
   "napi": {

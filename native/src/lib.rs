@@ -120,8 +120,8 @@ impl Inflate {
         // The old code used `window_bits >= 0`, which made window_bits = 16
         // (gzip) set zlib_header = true — causing it to try to parse a zlib
         // header on gzip data and silently produce wrong output.
-        let zlib_header = zlib_header_from_window_bits(window_bits)
-            .map_err(napi::Error::from_reason)?;
+        let zlib_header =
+            zlib_header_from_window_bits(window_bits).map_err(napi::Error::from_reason)?;
 
         let decompress = Decompress::new(zlib_header);
         let out_buf = vec![0u8; chunk_size as usize];
@@ -193,7 +193,11 @@ impl Inflate {
                 "flush mode {} ({}) is not supported by this inflate implementation; \
                  Z_BLOCK and Z_TREES require lower-level zlib access than flate2 exposes",
                 flush_int,
-                if flush_int == Z_BLOCK { "Z_BLOCK" } else { "Z_TREES" }
+                if flush_int == Z_BLOCK {
+                    "Z_BLOCK"
+                } else {
+                    "Z_TREES"
+                }
             )));
         }
 
@@ -275,8 +279,7 @@ impl Inflate {
         // window_bits was already validated in `new()`, so the only values
         // that can reach here are 0, 1..=15, and i32::MIN..=-1; the error
         // branch of `zlib_header_from_window_bits` is unreachable.
-        let zlib_header = zlib_header_from_window_bits(self.window_bits)
-            .unwrap_or(true);
+        let zlib_header = zlib_header_from_window_bits(self.window_bits).unwrap_or(true);
         self.decompress = Decompress::new(zlib_header);
         self.result_size = 0;
         self.total_out = 0;
@@ -399,7 +402,9 @@ fn grow_buffer(inflate: &mut Inflate) -> std::result::Result<(), String> {
     // Bytes in `old_len..new_len` are uninitialised but never read:
     // `result` slices only up to `total_out`, and flate2 treats the
     // output slice as write-only.
-    unsafe { inflate.out_buf.set_len(new_len); }
+    unsafe {
+        inflate.out_buf.set_len(new_len);
+    }
     Ok(())
 }
 
@@ -455,12 +460,13 @@ fn inflate_all(
                     // avoid spinning forever on a malformed stream.
                     stall_count += 1;
                     if stall_count >= MAX_STALLS {
-                        let consumed =
-                            (inflate.decompress.total_in() - total_in_start) as usize;
+                        let consumed = (inflate.decompress.total_in() - total_in_start) as usize;
                         return Err(format!(
                             "inflate stalled: no progress after {} attempts \
                              ({} of {} input bytes consumed; possible corrupt stream)",
-                            MAX_STALLS, consumed, input.len()
+                            MAX_STALLS,
+                            consumed,
+                            input.len()
                         ));
                     }
                     grow_buffer(inflate)?;
@@ -502,45 +508,45 @@ macro_rules! napi_const_i32 {
 }
 
 // Flush constants
-napi_const_i32!(z_no_flush,      Z_NO_FLUSH);
+napi_const_i32!(z_no_flush, Z_NO_FLUSH);
 napi_const_i32!(z_partial_flush, Z_PARTIAL_FLUSH);
-napi_const_i32!(z_sync_flush,    Z_SYNC_FLUSH);
-napi_const_i32!(z_full_flush,    Z_FULL_FLUSH);
-napi_const_i32!(z_finish,        Z_FINISH);
-napi_const_i32!(z_block,         Z_BLOCK);
-napi_const_i32!(z_trees,         Z_TREES);
+napi_const_i32!(z_sync_flush, Z_SYNC_FLUSH);
+napi_const_i32!(z_full_flush, Z_FULL_FLUSH);
+napi_const_i32!(z_finish, Z_FINISH);
+napi_const_i32!(z_block, Z_BLOCK);
+napi_const_i32!(z_trees, Z_TREES);
 
 // Return codes
-napi_const_i32!(z_ok,            Z_OK);
-napi_const_i32!(z_stream_end,    Z_STREAM_END);
-napi_const_i32!(z_need_dict,     Z_NEED_DICT);
-napi_const_i32!(z_errno,         Z_ERRNO);
-napi_const_i32!(z_stream_error,  Z_STREAM_ERROR);
-napi_const_i32!(z_data_error,    Z_DATA_ERROR);
-napi_const_i32!(z_mem_error,     Z_MEM_ERROR);
-napi_const_i32!(z_buf_error,     Z_BUF_ERROR);
+napi_const_i32!(z_ok, Z_OK);
+napi_const_i32!(z_stream_end, Z_STREAM_END);
+napi_const_i32!(z_need_dict, Z_NEED_DICT);
+napi_const_i32!(z_errno, Z_ERRNO);
+napi_const_i32!(z_stream_error, Z_STREAM_ERROR);
+napi_const_i32!(z_data_error, Z_DATA_ERROR);
+napi_const_i32!(z_mem_error, Z_MEM_ERROR);
+napi_const_i32!(z_buf_error, Z_BUF_ERROR);
 napi_const_i32!(z_version_error, Z_VERSION_ERROR);
 
 // Compression levels
-napi_const_i32!(z_no_compression,      Z_NO_COMPRESSION);
-napi_const_i32!(z_best_speed,          Z_BEST_SPEED);
-napi_const_i32!(z_best_compression,    Z_BEST_COMPRESSION);
+napi_const_i32!(z_no_compression, Z_NO_COMPRESSION);
+napi_const_i32!(z_best_speed, Z_BEST_SPEED);
+napi_const_i32!(z_best_compression, Z_BEST_COMPRESSION);
 napi_const_i32!(z_default_compression, Z_DEFAULT_COMPRESSION);
 
 // Compression strategies
-napi_const_i32!(z_filtered,         Z_FILTERED);
-napi_const_i32!(z_huffman_only,     Z_HUFFMAN_ONLY);
-napi_const_i32!(z_rle,              Z_RLE);
-napi_const_i32!(z_fixed,            Z_FIXED);
+napi_const_i32!(z_filtered, Z_FILTERED);
+napi_const_i32!(z_huffman_only, Z_HUFFMAN_ONLY);
+napi_const_i32!(z_rle, Z_RLE);
+napi_const_i32!(z_fixed, Z_FIXED);
 napi_const_i32!(z_default_strategy, Z_DEFAULT_STRATEGY);
 
 // Data types / misc
-napi_const_i32!(z_binary,   Z_BINARY);
-napi_const_i32!(z_text,     Z_TEXT);
-napi_const_i32!(z_ascii,    Z_ASCII);
-napi_const_i32!(z_unknown,  Z_UNKNOWN);
+napi_const_i32!(z_binary, Z_BINARY);
+napi_const_i32!(z_text, Z_TEXT);
+napi_const_i32!(z_ascii, Z_ASCII);
+napi_const_i32!(z_unknown, Z_UNKNOWN);
 napi_const_i32!(z_deflated, Z_DEFLATED);
-napi_const_i32!(z_null,     Z_NULL);
+napi_const_i32!(z_null, Z_NULL);
 
 #[napi]
 pub fn zlib_version() -> &'static str {
@@ -562,21 +568,21 @@ pub fn zlib_version() -> &'static str {
 fn int_to_flush(n: i32) -> FlushDecompress {
     match n {
         Z_SYNC_FLUSH => FlushDecompress::Sync,
-        Z_FINISH     => FlushDecompress::Finish,
-        _            => FlushDecompress::None, // includes Z_NO_FLUSH, Z_FULL_FLUSH, etc.
+        Z_FINISH => FlushDecompress::Finish,
+        _ => FlushDecompress::None, // includes Z_NO_FLUSH, Z_FULL_FLUSH, etc.
     }
 }
 
 fn zlib_err_str(code: i32) -> &'static str {
     match code {
-        Z_STREAM_END    => "stream end",
-        Z_NEED_DICT     => "need dictionary",
-        Z_ERRNO         => "file error",
-        Z_STREAM_ERROR  => "stream error",
-        Z_DATA_ERROR    => "data error",
-        Z_MEM_ERROR     => "insufficient memory",
-        Z_BUF_ERROR     => "buffer error",
+        Z_STREAM_END => "stream end",
+        Z_NEED_DICT => "need dictionary",
+        Z_ERRNO => "file error",
+        Z_STREAM_ERROR => "stream error",
+        Z_DATA_ERROR => "data error",
+        Z_MEM_ERROR => "insufficient memory",
+        Z_BUF_ERROR => "buffer error",
         Z_VERSION_ERROR => "incompatible version",
-        _               => "unknown zlib error",
+        _ => "unknown zlib error",
     }
 }
