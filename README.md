@@ -191,7 +191,7 @@ All standard zlib constants are re-exported. They match the values in `zlib.h` e
 
 ---
 
-## Usage with Discord.js / WebSockets
+## Usage with Discord WebSockets
 
 A common use-case is decompressing Discord gateway payloads with `zlib-stream` transport compression:
 
