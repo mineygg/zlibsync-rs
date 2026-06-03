@@ -1,12 +1,22 @@
-import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { Inflate } from "../src/index";
+import { Deflate, Inflate, Z_FINISH, Z_NO_FLUSH } from "../src/index";
+
+// ---------------------------------------------------------------------------
+// Helper: synchronous compress with our Deflate
+// ---------------------------------------------------------------------------
+
+function deflate(input: Buffer): Buffer {
+  const d = new Deflate();
+  d.push(input, Z_FINISH);
+  if (d.err < 0) throw new Error(`Deflate error ${d.err}: ${d.msg}`);
+  return d.result as Buffer;
+}
 
 describe("Stress Tests", () => {
   describe("Large data handling", () => {
-    it("should inflate 1MB of data", () => {
+    it("should compress and inflate 1MB of data", () => {
       const largeData = Buffer.alloc(1024 * 1024, "a");
-      const compressed = deflateSync(largeData);
+      const compressed = deflate(largeData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -21,9 +31,9 @@ describe("Stress Tests", () => {
       console.log(`1MB decompression: ${(end - start).toFixed(2)}ms`);
     });
 
-    it("should inflate 10MB of data", () => {
+    it("should compress and inflate 10MB of data", () => {
       const largeData = Buffer.alloc(10 * 1024 * 1024, "x");
-      const compressed = deflateSync(largeData);
+      const compressed = deflate(largeData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -40,11 +50,10 @@ describe("Stress Tests", () => {
 
     it("should handle 50MB of compressible data", () => {
       const largeData = Buffer.alloc(50 * 1024 * 1024);
-      // Fill with repeating pattern for good compression
       for (let i = 0; i < largeData.length; i += 4) {
         largeData.writeUInt32BE(0xdeadbeef, i);
       }
-      const compressed = deflateSync(largeData);
+      const compressed = deflate(largeData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -63,12 +72,11 @@ describe("Stress Tests", () => {
     }, 15000);
   });
 
-  describe("Chunked decompression", () => {
+  describe("Chunked compression and decompression", () => {
     it("should handle small chunk decompression efficiently", () => {
       const testData = Buffer.alloc(1024 * 1024, "test");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
 
-      // Split into small chunks
       const chunkSize = 1024;
       const inflate = new Inflate();
 
@@ -87,11 +95,37 @@ describe("Stress Tests", () => {
       console.log(`1MB chunked (1KB chunks) decompression: ${(end - start).toFixed(2)}ms`);
     });
 
+    it("should handle chunked compression (Z_NO_FLUSH then Z_FINISH)", () => {
+      const testData = Buffer.alloc(5 * 1024 * 1024, "medium");
+      const chunkSize = 65536;
+      const d = new Deflate();
+
+      const start = performance.now();
+      for (let i = 0; i < testData.length; i += chunkSize) {
+        const chunk = testData.slice(i, Math.min(i + chunkSize, testData.length));
+        const isLast = i + chunkSize >= testData.length;
+        d.push(chunk, isLast ? Z_FINISH : Z_NO_FLUSH);
+      }
+      const end = performance.now();
+
+      expect(d.err).toBeGreaterThanOrEqual(0);
+      const compressed = d.result as Buffer;
+
+      const inflate = new Inflate();
+      inflate.push(compressed);
+      const result = inflate.result;
+      expect(result).not.toBeNull();
+      if (Buffer.isBuffer(result)) {
+        expect(result.length).toBe(5 * 1024 * 1024);
+      }
+      console.log(`5MB chunked (64KB) compression: ${(end - start).toFixed(2)}ms`);
+    });
+
     it("should handle medium chunk decompression", () => {
       const testData = Buffer.alloc(5 * 1024 * 1024, "medium");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
 
-      const chunkSize = 65536; // 64KB chunks
+      const chunkSize = 65536;
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -111,9 +145,9 @@ describe("Stress Tests", () => {
 
     it("should handle large chunk decompression", () => {
       const testData = Buffer.alloc(5 * 1024 * 1024, "large");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
 
-      const chunkSize = 1024 * 1024; // 1MB chunks
+      const chunkSize = 1024 * 1024;
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -136,7 +170,7 @@ describe("Stress Tests", () => {
     it("should handle highly compressible data (repetitive)", () => {
       const testData = Buffer.alloc(10 * 1024 * 1024);
       testData.fill("A");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -159,7 +193,7 @@ describe("Stress Tests", () => {
       for (let i = 0; i < testData.length; i++) {
         testData[i] = Math.floor(Math.random() * 256);
       }
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -191,7 +225,7 @@ describe("Stress Tests", () => {
           })),
       };
       const testData = Buffer.from(JSON.stringify(jsonObj).repeat(1000));
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -211,11 +245,10 @@ describe("Stress Tests", () => {
 
     it("should handle binary data", () => {
       const testData = Buffer.alloc(5 * 1024 * 1024);
-      // Create binary pattern
       for (let i = 0; i < testData.length; i += 8) {
         testData.writeBigUInt64BE(0x0102030405060708n, i);
       }
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
       const inflate = new Inflate();
 
       const start = performance.now();
@@ -232,12 +265,15 @@ describe("Stress Tests", () => {
   });
 
   describe("Multiple sequential operations", () => {
-    it("should handle 100 sequential inflate operations", () => {
+    it("should handle 100 sequential deflate+inflate operations", () => {
       const testData = Buffer.alloc(100 * 1024, "test");
-      const compressed = deflateSync(testData);
 
       const start = performance.now();
       for (let i = 0; i < 100; i++) {
+        const d = new Deflate();
+        d.push(testData, Z_FINISH);
+        const compressed = d.result as Buffer;
+
         const inflate = new Inflate();
         inflate.push(compressed);
         const result = inflate.result;
@@ -250,26 +286,26 @@ describe("Stress Tests", () => {
 
       const avgTime = ((end - start) / 100).toFixed(2);
       console.log(
-        `100x sequential 100KB decompression: total ${(end - start).toFixed(2)}ms, avg ${avgTime}ms`,
+        `100x sequential 100KB deflate+inflate: total ${(end - start).toFixed(2)}ms, avg ${avgTime}ms`,
       );
     });
 
-    it("should handle 1000 sequential inflate operations", () => {
+    it("should handle 1000 sequential deflate+inflate operations", () => {
       const testData = Buffer.alloc(10 * 1024, "test");
-      const compressed = deflateSync(testData);
 
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
+        const d = new Deflate();
+        d.push(testData, Z_FINISH);
         const inflate = new Inflate();
-        inflate.push(compressed);
-        const result = inflate.result;
-        expect(result).not.toBeNull();
+        inflate.push(d.result as Buffer);
+        expect(inflate.result).not.toBeNull();
       }
       const end = performance.now();
 
       const avgTime = ((end - start) / 1000).toFixed(3);
       console.log(
-        `1000x sequential 10KB decompression: total ${(end - start).toFixed(2)}ms, avg ${avgTime}ms`,
+        `1000x sequential 10KB deflate+inflate: total ${(end - start).toFixed(2)}ms, avg ${avgTime}ms`,
       );
     });
   });
@@ -282,7 +318,7 @@ describe("Stress Tests", () => {
       for (const sizeMB of sizes) {
         const testData = Buffer.alloc(sizeMB * 1024 * 1024);
         testData.fill("benchmark");
-        const compressed = deflateSync(testData);
+        const compressed = deflate(testData);
         const inflate = new Inflate();
 
         const start = performance.now();
@@ -304,7 +340,7 @@ describe("Stress Tests", () => {
     it("should measure decompression speed with varying chunk sizes", () => {
       const testData = Buffer.alloc(10 * 1024 * 1024);
       testData.fill("chunk");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
 
       const chunkSizes = [1024, 8192, 65536, 1024 * 1024];
       const results = [];
@@ -335,7 +371,7 @@ describe("Stress Tests", () => {
   describe("String output with large data", () => {
     it("should decompress large text data to string efficiently", () => {
       const textData = Buffer.from("The quick brown fox jumps over the lazy dog. ".repeat(100000));
-      const compressed = deflateSync(textData);
+      const compressed = deflate(textData);
       const inflate = new Inflate({ to: "string" });
 
       const start = performance.now();
@@ -357,7 +393,7 @@ describe("Stress Tests", () => {
     it("should handle maximum realistic chunk size", () => {
       const testData = Buffer.alloc(100 * 1024 * 1024);
       testData.fill("max");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
       const inflate = new Inflate({ chunkSize: 10 * 1024 * 1024 });
 
       const start = performance.now();
@@ -371,11 +407,10 @@ describe("Stress Tests", () => {
 
     it("should handle rapid sequential pushes", () => {
       const testData = Buffer.alloc(5 * 1024 * 1024, "rapid");
-      const compressed = deflateSync(testData);
+      const compressed = deflate(testData);
       const inflate = new Inflate();
 
       const start = performance.now();
-      // Push in very small chunks rapidly
       for (let i = 0; i < compressed.length; i += 512) {
         inflate.push(compressed.slice(i, Math.min(i + 512, compressed.length)));
       }

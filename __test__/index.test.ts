@@ -1,6 +1,6 @@
-import { deflateSync } from "node:zlib";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  Deflate,
   Inflate,
   Z_ASCII,
   Z_BEST_COMPRESSION,
@@ -35,6 +35,22 @@ import {
   Z_VERSION_ERROR,
   ZLIB_VERSION,
 } from "../src/index";
+
+// ---------------------------------------------------------------------------
+// Helper: compress with our Deflate (replaces node:zlib deflateSync)
+// ---------------------------------------------------------------------------
+
+function deflate(input: string | Buffer): Buffer {
+  const data = typeof input === "string" ? Buffer.from(input) : input;
+  const d = new Deflate();
+  d.push(data, Z_FINISH);
+  if (d.err < 0) throw new Error(`Deflate error ${d.err}: ${d.msg}`);
+  return d.result as Buffer;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 describe("Constants", () => {
   describe("Flush modes", () => {
@@ -210,6 +226,10 @@ describe("Constants", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Inflate class
+// ---------------------------------------------------------------------------
+
 describe("Inflate class", () => {
   let inflate: InstanceType<typeof Inflate>;
 
@@ -240,43 +260,30 @@ describe("Inflate class", () => {
 
   describe("basic inflation", () => {
     it("should inflate compressed data", () => {
-      const testString = "Hello, World!";
-      const compressed = deflateSync(testString);
-
+      const compressed = deflate("Hello, World!");
       inflate.push(compressed);
-      const result = inflate.result;
-
-      expect(result).toBeDefined();
+      expect(inflate.result).toBeDefined();
     });
 
     it("should handle multiple pushes", () => {
-      const testString = "This is a longer test string that will be split";
-      const compressed = deflateSync(testString);
-
-      // Split the compressed data into chunks
+      const compressed = deflate("This is a longer test string that will be split");
       const chunk1 = compressed.slice(0, Math.ceil(compressed.length / 2));
       const chunk2 = compressed.slice(Math.ceil(compressed.length / 2));
-
       inflate.push(chunk1);
       inflate.push(chunk2);
-
-      const result = inflate.result;
-      expect(result).toBeDefined();
+      expect(inflate.result).toBeDefined();
     });
 
     it("should handle empty data", () => {
-      const empty = deflateSync("");
+      const empty = deflate("");
       inflate.push(empty);
-      const result = inflate.result;
-      expect(result).toBeDefined();
+      expect(inflate.result).toBeDefined();
     });
 
     it("should return result as Buffer by default", () => {
-      const testString = "Test";
-      const compressed = deflateSync(testString);
+      const compressed = deflate("Test");
       inflate.push(compressed);
       const result = inflate.result;
-
       expect(result !== null && (Buffer.isBuffer(result) || typeof result === "string")).toBe(true);
     });
   });
@@ -285,15 +292,12 @@ describe("Inflate class", () => {
     it("should support converting output to string", () => {
       const inflateString = new Inflate({ to: "string" });
       const testString = "Hello, World!";
-      const compressed = deflateSync(testString);
-
+      const compressed = deflate(testString);
       inflateString.push(compressed);
       const result = inflateString.result;
-
       if (typeof result === "string") {
         expect(result).toBe(testString);
       } else if (result !== null && Buffer.isBuffer(result)) {
-        // If Buffer is returned, convert and compare
         expect(result.toString()).toBe(testString);
       } else {
         expect(result).not.toBeNull();
@@ -310,32 +314,196 @@ describe("Inflate class", () => {
     });
 
     it("should have a result property", () => {
-      const testString = "Test";
-      const compressed = deflateSync(testString);
-      inflate.push(compressed);
-
+      inflate.push(deflate("Test"));
       expect(inflate).toHaveProperty("result");
     });
   });
 
   describe("reusability", () => {
     it("should handle sequential inflate operations", () => {
-      const testString1 = "First test";
-      const compressed1 = deflateSync(testString1);
-
       const inflate1 = new Inflate();
-      inflate1.push(compressed1);
+      inflate1.push(deflate("First test"));
       const result1 = inflate1.result;
 
-      const testString2 = "Second test";
-      const compressed2 = deflateSync(testString2);
-
       const inflate2 = new Inflate();
-      inflate2.push(compressed2);
+      inflate2.push(deflate("Second test"));
       const result2 = inflate2.result;
 
       expect(result1).toBeDefined();
       expect(result2).toBeDefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deflate class
+// ---------------------------------------------------------------------------
+
+describe("Deflate class", () => {
+  let d: InstanceType<typeof Deflate>;
+
+  beforeEach(() => {
+    d = new Deflate();
+  });
+
+  describe("instantiation", () => {
+    it("should create a Deflate instance", () => {
+      expect(d).toBeInstanceOf(Deflate);
+    });
+
+    it("should support chunkSize option", () => {
+      expect(new Deflate({ chunkSize: 16384 })).toBeInstanceOf(Deflate);
+    });
+
+    it("should support level option", () => {
+      expect(new Deflate({ level: Z_BEST_SPEED })).toBeInstanceOf(Deflate);
+      expect(new Deflate({ level: Z_BEST_COMPRESSION })).toBeInstanceOf(Deflate);
+      expect(new Deflate({ level: Z_NO_COMPRESSION })).toBeInstanceOf(Deflate);
+    });
+
+    it("should support windowBits option", () => {
+      expect(new Deflate({ windowBits: 15 })).toBeInstanceOf(Deflate);
+    });
+
+    it("should expose level getter", () => {
+      const d6 = new Deflate({ level: 6 });
+      expect(d6.level).toBe(6);
+    });
+
+    it("should expose chunkSize getter", () => {
+      const d2 = new Deflate({ chunkSize: 32768 });
+      expect(d2.chunkSize).toBe(32768);
+    });
+
+    it("should expose windowBits getter", () => {
+      const d3 = new Deflate({ windowBits: 12 });
+      expect(d3.windowBits).toBe(12);
+    });
+  });
+
+  describe("basic compression", () => {
+    it("should compress and round-trip data", () => {
+      const original = Buffer.from("Hello, World!");
+      d.push(original, Z_FINISH);
+      expect(d.err).toBeGreaterThanOrEqual(0);
+      const compressed = d.result as Buffer;
+      expect(Buffer.isBuffer(compressed)).toBe(true);
+      expect(compressed.length).toBeGreaterThan(0);
+
+      const inf = new Inflate();
+      inf.push(compressed, Z_FINISH);
+      expect(inf.err).toBeGreaterThanOrEqual(0);
+      expect((inf.result as Buffer).toString()).toBe("Hello, World!");
+    });
+
+    it("should produce smaller output for compressible data", () => {
+      const repetitive = Buffer.alloc(10_000, "a");
+      d.push(repetitive, Z_FINISH);
+      const compressed = d.result as Buffer;
+      expect(compressed.length).toBeLessThan(repetitive.length);
+    });
+
+    it("should handle empty input", () => {
+      d.push(Buffer.alloc(0), Z_FINISH);
+      expect(d.err).toBeGreaterThanOrEqual(0);
+      const compressed = d.result as Buffer;
+      expect(Buffer.isBuffer(compressed)).toBe(true);
+
+      const inf = new Inflate();
+      inf.push(compressed, Z_FINISH);
+      expect((inf.result as Buffer).length).toBe(0);
+    });
+
+    it("should handle multiple Z_NO_FLUSH pushes then Z_FINISH", () => {
+      const part1 = Buffer.from("Hello, ");
+      const part2 = Buffer.from("World!");
+      d.push(part1, Z_NO_FLUSH);
+      d.push(part2, Z_FINISH);
+      expect(d.err).toBeGreaterThanOrEqual(0);
+      const compressed = d.result as Buffer;
+
+      const inf = new Inflate();
+      inf.push(compressed, Z_FINISH);
+      expect((inf.result as Buffer).toString()).toBe("Hello, World!");
+    });
+
+    it("should handle Z_SYNC_FLUSH", () => {
+      d.push(Buffer.from("flush me"), Z_SYNC_FLUSH);
+      expect(d.err).toBeGreaterThanOrEqual(0);
+      const partial = d.result as Buffer;
+      expect(Buffer.isBuffer(partial)).toBe(true);
+    });
+
+    it("should be a no-op after Z_STREAM_END", () => {
+      d.push(Buffer.from("data"), Z_FINISH);
+      expect(d.err).toBe(Z_STREAM_END);
+      // Subsequent push should be silently ignored
+      d.push(Buffer.from("more"), Z_SYNC_FLUSH);
+      expect(d.err).toBe(Z_STREAM_END);
+    });
+  });
+
+  describe("compression levels", () => {
+    it("should produce valid output at all levels", () => {
+      const original = Buffer.from("The quick brown fox jumps over the lazy dog".repeat(100));
+      for (const level of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+        const def = new Deflate({ level });
+        def.push(original, Z_FINISH);
+        expect(def.err).toBeGreaterThanOrEqual(0);
+
+        const inf = new Inflate();
+        inf.push(def.result as Buffer, Z_FINISH);
+        expect(inf.err).toBeGreaterThanOrEqual(0);
+        expect((inf.result as Buffer).equals(original)).toBe(true);
+      }
+    });
+  });
+
+  describe("raw deflate (negative windowBits)", () => {
+    it("should round-trip with matching Inflate windowBits", () => {
+      const original = Buffer.from("raw deflate data");
+      const rawDeflate = new Deflate({ windowBits: -15 });
+      rawDeflate.push(original, Z_FINISH);
+      const compressed = rawDeflate.result as Buffer;
+
+      const rawInflate = new Inflate({ windowBits: -15 });
+      rawInflate.push(compressed, Z_FINISH);
+      expect((rawInflate.result as Buffer).toString()).toBe("raw deflate data");
+    });
+  });
+
+  describe("reset", () => {
+    it("should allow reuse for a new stream after reset", () => {
+      d.push(Buffer.from("first stream"), Z_FINISH);
+      expect(d.err).toBe(Z_STREAM_END);
+
+      d.reset();
+      expect(d.err).toBe(Z_OK);
+
+      d.push(Buffer.from("second stream"), Z_FINISH);
+      expect(d.err).toBe(Z_STREAM_END);
+
+      const inf = new Inflate();
+      inf.push(d.result as Buffer, Z_FINISH);
+      expect((inf.result as Buffer).toString()).toBe("second stream");
+    });
+  });
+
+  describe("error handling", () => {
+    it("should reject invalid flush modes", () => {
+      expect(() => d.push(Buffer.from("x"), 99 as never)).toThrow();
+    });
+
+    it("should reject Z_BLOCK", () => {
+      expect(() => d.push(Buffer.from("x"), Z_BLOCK)).toThrow();
+    });
+
+    it("should reject Z_TREES", () => {
+      expect(() => d.push(Buffer.from("x"), Z_TREES)).toThrow();
+    });
+
+    it("should reject invalid level at construction", () => {
+      expect(() => new Deflate({ level: 99 })).toThrow();
     });
   });
 });

@@ -4,11 +4,28 @@
 export declare class Inflate {
   constructor(opts?: { chunkSize?: number; to?: string; windowBits?: number });
   push(data: Buffer, flushMode?: boolean | number): void;
+  reset(): void;
+  /** @deprecated Use takeResult() instead. */
+  /** @deprecated Use takeResult() instead. */
+  get result(): Buffer | string | null;
+  takeResult(): Buffer | string | null;
+  takeResult(): Buffer | string | null;
+  get err(): number;
+  get msg(): string | null;
+  get chunkSize(): number;
+  get windowBits(): number;
+}
+
+export declare class Deflate {
+  constructor(opts?: { chunkSize?: number; to?: string; level?: number; windowBits?: number });
+  push(data: Buffer, flushMode?: boolean | number): void;
+  reset(): void;
   get result(): Buffer | string | null;
   get err(): number;
   get msg(): string | null;
   get chunkSize(): number;
   get windowBits(): number;
+  get level(): number;
 }
 
 export declare function zNoFlush(): number;
